@@ -1,0 +1,176 @@
+---
+title: "Untitled"
+format: html
+---
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import re
+
+d = pd.read_csv(r"C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis\combination_df.csv")
+```
+
+
+
+```{python}
+os.chdir(r'C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis')
+
+from tennis_functions import head_to_head, surface_and_elo, streaks, more_cat_vars, calc_match_stats, win_rates, time_on_court_and_rest
+
+os.chdir(r'C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis')
+
+d['date'] = pd.to_datetime(d['date'])
+
+h2h = head_to_head(d)
+```
+
+
+```{python}
+surf_elo = surface_and_elo(h2h)
+strks = streaks(surf_elo)
+```
+
+
+```{python}
+mcv = more_cat_vars(strks)
+mstats = calc_match_stats(mcv)
+```
+
+```{python}
+mstats.to_csv("please_fucking_work.csv")
+```
+
+
+
+```{python}
+rates = win_rates(mstats)
+t = time_on_court_and_rest(rates)
+```
+
+
+```{python}
+t.to_csv("aus_data_for_simulation")
+```
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import re
+
+l = pd.read_csv(r'C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis\please_fucking_work.csv')
+```
+
+```{python}
+os.chdir(r'C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis')
+from tennis_functions import win_rates_v2
+rates_2 = win_rates_v2(l)
+t = time_on_court_and_rest(rates_2)
+```
+
+
+```{python}
+rates_2[(rates_2['player'] == 'Carlos Alcaraz') | (rates_2['player'] == 'Novak Djokovic')]
+```
+
+
+
+```{python}
+import pandas as pd
+b = pd.read_csv("aus_open_data_full_feats.csv")
+b['date'] = pd.to_datetime(b['date'])
+```
+
+
+```{python}
+
+b['date'] = b.groupby(['tourney_name', b['date'].dt.year])['date'].transform('min')
+```
+
+
+```{python}
+os.chdir(r'C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis')
+from tennis_functions import time_on_court_and_rest, win_rates_v2, calc_match_stats_v2
+
+please = time_on_court_and_rest(b)
+
+please.to_csv("woooooork.csv")
+
+
+
+pl = pd.read_csv(r"C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis\woooooork.csv")
+v = win_rates_v2(pl)
+```
+
+
+
+```{python}
+c = v.drop(columns=['player_matches_played_last_30Days',
+ 'player_win_rate_last_30Days',
+ 'opponent_matches_played_last_30Days',
+ 'opponent_win_rate_last_30Days',
+ 'player_matches_played_last_60Days',
+ 'player_win_rate_last_60Days',
+ 'opponent_matches_played_last_60Days',
+ 'opponent_win_rate_last_60Days',
+ 'player_matches_played_last_90Days',
+ 'player_win_rate_last_90Days',
+ 'opponent_matches_played_last_90Days',
+ 'opponent_win_rate_last_90Days',])
+```
+
+```{python}
+p = pd.read_csv("tennis_extnd_feats_v2_with_aussie_data.csv")
+
+q = p[p['date'] >="2011-01-01"]
+c = calc_match_stats_v2(q)
+```
+
+
+```{python}
+# Option 1: Update only the columns that exist in both dataframes
+common_cols = [col for col in c.columns if col in v.columns]
+v[common_cols] = c[common_cols]
+```
+
+
+```{python}
+c.to_csv("aus_data_with_new_win_rates.csv")
+```
+
+
+
+
+```{python}
+dat = pd.read_csv("tennis_data_with_time.csv")
+dat['date'] = pd.to_datetime(dat['date'])
+
+u = win_rates_v2(dat)
+```
+
+```{python}
+t = u.drop(columns=['player_matches_played_last_30Days',
+ 'player_win_rate_last_30Days',
+ 'opponent_matches_played_last_30Days',
+ 'opponent_win_rate_last_30Days',
+ 'player_matches_played_last_60Days',
+ 'player_win_rate_last_60Days',
+ 'opponent_matches_played_last_60Days',
+ 'opponent_win_rate_last_60Days',
+ 'player_matches_played_last_90Days',
+ 'player_win_rate_last_90Days',
+ 'opponent_matches_played_last_90Days',
+ 'opponent_win_rate_last_90Days',])
+```
+
+
+```{python}
+t = 
+```
+
+
+```{python}
+t.to_csv("full_data_with_new_win_rates")
+```

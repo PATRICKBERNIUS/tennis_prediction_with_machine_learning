@@ -1,0 +1,354 @@
+---
+title: "Tennis_Proj"
+output: html_document
+date: "2026-02-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+source("elo_funcs.R")
+library(dplyr)
+```
+
+
+```{r}
+#load in data
+data <- read.csv("match_data.csv")
+new_dat <- read.csv("2026_aus_open.csv")
+
+data$X <- NULL
+
+data <- rbind(data, new_dat) #combine old with new updated data
+tail(data, 500)
+```
+
+```{r}
+data$tourney_date <- as.Date(as.character(data$tourney_date), format = "%Y%m%d") #changing date column to date format
+#ensuring df is ordered by date. Should be already but just to make sure
+data <- data[order(data$tourney_date, decreasing = FALSE), ]
+
+```
+
+```{r}
+tail(data, 500)
+```
+
+```{r}
+#standardizing player names
+data$winner_name <- tolower(data$winner_name)
+data$loser_name <- tolower(data$loser_name)
+
+players <- unique(c(data$winner_name, data$loser_name)) #list of every player, winners and loser
+
+players_elo <- data.frame(players = players, elo = rep(1500, length(players))) #give each player as starting elo of 1500
+head(players_elo) 
+```
+
+Function to calculate ELO ratings
+
+```{r}
+k <- 32 #32 is generally the best k for tennis
+
+data$winner_elo <- NA #empty column for winnner elo
+data$loser_elo <- NA #empty column for loser elo
+
+for (i in 1:nrow(data)){ #for each row in our date, each match
+  winner <- data$winner_name[i] #get the winner
+  loser <- data$loser_name[i] #get the loser
+  
+  winner_elo <- players_elo$elo[players_elo$players == winner] #find current elo rating for winner
+  loser_elo <- players_elo$elo[players_elo$players == loser] #find current elo rating for loser
+  
+  data$winner_elo[i] <- winner_elo #add winner elo to df
+  data$loser_elo[i] <- loser_elo #add loser elo to df
+  
+  #update elo calculation
+  new_elo <- elo.calc(wins.A = 1, #1 means win
+                      elo.A = winner_elo, #winner prematch elo
+                      elo.B= loser_elo, #loser prematch elo
+                      k=k)
+  
+  players_elo$elo[players_elo$players == winner] <- new_elo[1, 1] #updates winner elo with new elo
+  players_elo$elo[players_elo$players == loser] <- new_elo[1, 2] #updates loser elo with new elo
+  
+  
+  
+}
+```
+
+
+
+```{r}
+tail(data)
+```
+
+
+
+Surface ELO rankings function
+
+
+```{r}
+players <- unique(c(data$winner_name, data$loser_name)) #unique players
+
+players_surf_elo <- data.frame(players = players, elo = rep(1500, length(players))) #new empty df of players elos
+head(players_surf_elo)
+
+empty_elo <- data.frame(players = players, elo = rep(1500, length(players))) #empty elo df for reference
+```
+
+
+Function for surface elos
+```{r}
+update_surface_elo_rankings <- function(data, players_surf_elo, k=32) { #takes in data, and starting surface elo
+
+  #create empty columns
+  data$winner_surf_elo <- NA 
+  data$loser_surf_elo <- NA
+  
+  #for each match
+  for (i in 1:nrow(data)){
+    winner <- data$winner_name[i] #store winner name
+    loser <- data$loser_name[i] #store loser name
+    
+    winner_elo <- players_surf_elo$elo[players_surf_elo$players == winner] #find current elo for winner
+    loser_elo <- players_surf_elo$elo[players_surf_elo$players == loser] #find current elo for loser
+    
+    data$winner_surf_elo[i] <- winner_elo #pre match ratings
+    data$loser_surf_elo[i] <- loser_elo
+    
+    #elo calculations using elos pre match
+    new_elo <- elo.calc(wins.A = 1,
+                        elo.A = winner_elo,
+                        elo.B= loser_elo,
+                        k=k)
+    
+    players_surf_elo$elo[players_surf_elo$players == winner] <- new_elo[1, 1] #update winner surface elo
+    players_surf_elo$elo[players_surf_elo$players == loser] <- new_elo[1, 2] #update loser surface elo
+     
+    
+    
+  }
+ 
+  
+  return(list(match_results = data, final_rankings=players_surf_elo)) #returns df with match results and new surface ratings
+}
+```
+
+Function to handle each surface
+```{r}
+surface_process <- function(surf_name, full_data, starting_elo, k=32) {#takes in surface name, match data, and starting elos
+  
+  sub_df <- full_data[full_data$surface == surf_name, ] #dataframe filtered for surface
+  
+  results <- update_surface_elo_rankings(sub_df, starting_elo, k=k) #update rankings using elo surface calc
+  
+  res <- results$match_results #store the match results
+  
+  #rename columns
+  colnames(res)[colnames(res) == "winner_surf_elo"] <- "winner_surface_elo"
+  colnames(res)[colnames(res) == "loser_surf_elo"] <- "loser_surface_elo"
+  
+  return(res)
+}
+
+
+data$orig_id <- 1:nrow(data) #adding an id column to keep track of match order
+
+#perform elo surface calc for each surface
+grass_results <- surface_process("Grass", data, empty_elo)
+clay_results <- surface_process("Clay", data, empty_elo)
+carpet_results <- surface_process("Carpet", data, empty_elo)
+hard_results <- surface_process("Hard", data, empty_elo)
+
+#recombine all of the data
+data <- rbind(grass_results, clay_results, carpet_results, hard_results)
+
+
+data <- data[order(data$orig_id), ] #order by the match id created earlier
+data$orig_id <- NULL #remove orig_id
+```
+
+
+```{r}
+#convert loser seed to dbl dtype
+data$loser_seed <- as.numeric(data$loser_seed)
+```
+
+
+
+Converting to long format, removing win and loss data, two rows for each match, outcome column 0=loss, 1=win. Essentially creating two dfs, one for the winners, one for the losers, and combining them.
+```{r}
+#I know it looks shitty. Started out small but ended up adding many more columns
+long_data <- bind_rows( #bind rows stacks the two dataframes vertically
+  
+  #winner data
+  data %>% transmute(match_id = row_number(), #transmute creates new df with column names and values
+                     tourney_name, 
+                     tourney_level,
+                     date = tourney_date,
+                     best_of,
+                     round,
+                     player_id = winner_id, 
+                     player = winner_name,
+                     player_hand = winner_hand,
+                     player_height = winner_ht,
+                     player_age = winner_age,
+                     player_rank = winner_rank,
+                     player_elo = winner_elo,
+                     player_surf_elo = winner_surface_elo,
+                     player_rank_points = winner_rank_points,
+                     player_seed = winner_seed,
+                     opponent_id = loser_id,
+                     opponent = loser_name,
+                     opponent_hand = loser_hand,
+                     opponent_height = loser_ht,
+                     opponent_age = loser_age,
+                     opponent_rank = loser_rank,
+                     opponent_elo = loser_elo,
+                     opponent_surf_elo = loser_surface_elo,
+                     opponent_rank_points = loser_rank_points,
+                     opponent_seed = loser_seed,
+                     surface,
+                     indoor,
+                     minutes, 
+                     player_ace = w_ace, 
+                     player_df = w_df,
+                     player_svpt = w_svpt,
+                     player_first_srv_in = w_1stIn,
+                     player_first_srv_won = w_1stWon,
+                     player_second_serv_won = w_2ndWon,
+                     player_serve_gms = w_SvGms,
+                     player_bp_saved = w_bpSaved,
+                     player_bp_faced = w_bpFaced,
+                     opponent_ace = l_ace, 
+                     opponent_df = l_df,
+                     opponent_svpt = l_svpt,
+                     opponent_first_srv_in = l_1stIn,
+                     opponent_first_srv_won = l_1stWon,
+                     opponent_second_serv_won = l_2ndWon,
+                     opponent_serve_gms = l_SvGms,
+                     opponent_bp_saved = l_bpSaved,
+                     opponent_bp_faced = l_bpFaced,
+                     outcome = 1,),
+  #loser data
+  data %>% transmute(match_id = row_number(),
+                     tourney_name, 
+                     tourney_level,
+                     date = tourney_date, 
+                     best_of,
+                     round,
+                     player_id = loser_id, 
+                     player = loser_name,
+                     player_hand = loser_hand,
+                     player_height = loser_ht,
+                     player_age = loser_age,
+                     player_rank = loser_rank,
+                     player_elo = loser_elo,
+                     player_surf_elo = loser_surface_elo,
+                     player_rank_points = loser_rank_points,
+                     player_seed = loser_seed,
+                     opponent_id = winner_id,
+                     opponent = winner_name,
+                     opponent_hand = winner_hand,
+                     opponent_height = winner_ht,
+                     opponent_age = winner_age,
+                     opponent_rank = winner_rank,
+                     opponent_elo = winner_elo,
+                     opponent_surf_elo = winner_surface_elo,
+                     opponent_rank_points = winner_rank_points,
+                     opponent_seed = winner_seed,
+                     surface,
+                     indoor,
+                     minutes, 
+                     player_ace = l_ace, 
+                     player_df = l_df,
+                     player_svpt = l_svpt,
+                     player_first_srv_in = l_1stIn,
+                     player_first_srv_won = l_1stWon,
+                     player_second_serv_won = l_2ndWon,
+                     player_serve_gms = l_SvGms,
+                     player_bp_saved = l_bpSaved,
+                     player_bp_faced = l_bpFaced,
+                     opponent_ace = w_ace, 
+                     opponent_df = w_df,
+                     opponent_svpt = w_svpt,
+                     opponent_first_srv_in = w_1stIn,
+                     opponent_first_srv_won = w_1stWon,
+                     opponent_second_serv_won = w_2ndWon,
+                     opponent_serve_gms = w_SvGms,
+                     opponent_bp_saved = w_bpSaved,
+                     opponent_bp_faced = w_bpFaced,
+                     outcome = 0,)
+) %>% arrange(date)
+
+long_data
+```
+
+
+```{r}
+names(long_data)
+```
+
+
+New simple difference features
+```{r}
+long_data <- long_data %>% mutate(
+  #rank differences
+  rank_diff = player_rank - opponent_rank,
+  rank_diff_abs = abs(player_rank - opponent_rank),
+  
+  #age differences
+  age_diff = player_age - opponent_age,
+  age_diff_abs = abs(player_age - opponent_age),
+  
+  #height differences
+  height_diff = player_height - opponent_height,
+  height_diff_abs = abs(player_height - opponent_height),
+  
+  #elo differences
+  elo_diff = player_elo - opponent_elo,
+  elo_diff_abs = abs(player_elo - opponent_elo),
+  
+  #rank points differences
+  rank_points_diff = player_rank_points - opponent_rank_points,
+  rank_points_diff_abs = abs(player_rank_points - opponent_rank_points),
+  
+  #seed differences
+  seed_diff = player_seed - opponent_seed,
+  seed_abs = abs(player_seed - opponent_seed),
+  
+  
+)
+```
+
+```{r}
+names(long_data)
+```
+A little more cleaning
+```{r}
+long_data$round[long_data$round == 'R256'] <- 'R128'
+long_data$round[long_data$round == 'Fs'] <- 'F'
+
+
+
+unique(long_data$round)
+tail(long_data)
+```
+
+
+
+```{r}
+write.csv(long_data, "tennis_extnd_feats_v2_with_aussie_data.csv", row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+

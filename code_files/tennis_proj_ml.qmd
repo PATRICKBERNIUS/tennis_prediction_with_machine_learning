@@ -1,0 +1,1250 @@
+---
+title: "Untitled"
+format: html
+---
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import re
+
+#dat = pd.read_csv("tennis_data_with_time.csv")
+
+#dat = pd.read_csv("full_data_with_new_win_rates")
+#dat = pd.read_csv("it_would_just_be_so_awesome_if_this_worked.csv")\
+dat = pd.read_csv("go_for_tuning_third_attempt.csv")
+
+dat['date'] = pd.to_datetime(dat['date'])
+
+
+```
+
+```{python}
+#dropping some columns we don't need
+dat = dat.drop(columns=['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.2'])
+```
+
+Logistic Regression Five Folds
+```{python}
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score, roc_curve
+
+dat2 = dat.copy()
+dat2 = dat2.dropna() #dropping missing values. Significantly reduces or data, but essential for logistic regression
+
+#grab our features
+features = dat2.drop(columns=['outcome', 'match_id', 'minutes'])
+
+
+x = features.select_dtypes(include=[np.number]) #only numeric features
+y = dat2['outcome']
+
+
+scaler = StandardScaler() #scaled data better for logisti
+
+tscv = TimeSeriesSplit(n_splits=5)
+
+scores = {}
+
+for trainIDX, testIDX in tscv.split(dat2):
+    x_train, x_test = x.iloc[trainIDX], x.iloc[testIDX]
+    y_train, y_test = y.iloc[trainIDX], y.iloc[testIDX]
+
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+
+    clf = LogisticRegression(random_state=42, max_iter=1000)
+    clf.fit(x_train, y_train)
+
+    y_prob_preds = clf.predict_proba(x_test)[:, 1]
+    logreg_fpr, logreg_tpr, _ = roc_curve(y_test, y_prob_preds)
+    
+
+    print(f"Model Scores {clf.score(x_test, y_test)}")
+    print(roc_auc_score(y_test, y_prob_preds))
+
+    scores.update("Probs" : y_prob_preds)
+    scores.update("Test Data" : y_test)
+    scores.update("False Positive Rates" : logreg_fpr)
+    scores.update("True Positive Rates" : logreg_tpr)
+
+
+avg_logreg_probs = mean(scores["Probs"].values())
+avg_logreg_probs = mean(scores["Probs"].values())
+avg_logreg_probs = mean(scores["Probs"].values())
+avg_logreg_probs = mean(scores["Probs"].values())
+
+```
+
+
+
+Logistic Regression Single Split
+```{python}
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score, roc_curve
+
+dat2 = dat.copy()
+dat2 = dat2.dropna() #dropping missing values. Significantly reduces or data, but essential for logistic regression
+
+#grab our features
+features = dat2.drop(columns=['outcome', 'match_id', 'minutes', 'year'])
+
+
+scaler = StandardScaler() #scaled data better for logistic regression
+
+#train on matches before 2024, test on matches after 2024
+train_data = dat2['year'] < 2024
+test_data = dat2['year'] >= 2024
+
+
+x_train = features[train_data].select_dtypes(include=[np.number]) #numeric features
+x_train = scaler.fit_transform(x_train) #scale data
+y_train = dat2.loc[train_data, 'outcome']
+
+x_test = features[test_data].select_dtypes(include=[np.number]) #numeric features
+x_test = scaler.transform(x_test) #scale date
+y_test = dat2.loc[test_data, 'outcome']
+
+#initialize model
+clf = LogisticRegression(random_state=42, max_iter=1000)
+#fit model
+clf.fit(x_train, y_train)
+
+#get our prediction probabilities
+y_prob_preds = clf.predict_proba(x_test)[:, 1]
+#fp and tp rates
+logreg_fpr, logreg_tpr, _ = roc_curve(y_test, y_prob_preds)
+
+#auc score
+logreg_auc = roc_auc_score(y_test, y_prob_preds)
+logreg_acc = clf.score(x_test, y_test)
+
+print(f"Model Score: {clf.score(x_test, y_test)}")
+print(f"AUC Score: {logreg_auc}")
+
+```
+
+
+
+
+Decision Trees Five Folds
+
+```{python}
+from sklearn.tree import DecisionTreeClassifier
+
+
+tr = DecisionTreeClassifier(random_state=42)
+
+features = dat.drop(columns=['outcome', 'match_id', 'minutes'])
+
+
+x = features.select_dtypes(include=[np.number])
+y = dat['outcome']
+
+
+
+tscv = TimeSeriesSplit(n_splits=5)
+
+for trainIDX, testIDX in tscv.split(dat):
+    x_train, x_test = x.iloc[trainIDX], x.iloc[testIDX]
+    y_train, y_test = y.iloc[trainIDX], y.iloc[testIDX]
+
+    #x_train = scaler.fit_transform(x_train)
+    #x_test = scaler.transform(x_test)
+
+    tr.fit(x_train, y_train)
+
+    print(tr.score(x_test, y_test))
+
+```
+
+
+
+Decision Trees Single Split
+```{python}
+from sklearn.tree import DecisionTreeClassifier
+dat3 = dat.copy()
+
+#drop unneeded and leakage features
+features = dat3.drop(columns=['outcome', 'match_id', 'minutes'])
+
+#train on data before 2024, test after 2024
+train_data = dat3['year'] < 2024
+test_data = dat3['year'] >= 2024
+
+x_train = features[train_data].select_dtypes(include=[np.number])#numeric features
+y_train = dat3.loc[train_data, 'outcome']
+
+x_test = features[test_data].select_dtypes(include=[np.number]) #numeric features
+y_test = dat3.loc[test_data, 'outcome']
+
+
+tr = DecisionTreeClassifier(random_state=42) #initialize model
+tr.fit(x_train, y_train) #fit model
+
+#prediction probablities
+y_prob_preds = tr.predict_proba(x_test)[:, 1]
+#fp and dt rates
+dt_fpr, dt_tpr, _ = roc_curve(y_test, y_prob_preds)
+
+#auc score
+dt_auc = roc_auc_score(y_test, y_prob_preds)
+dt_acc = tr.score(x_test, y_test)
+
+print(f"Model Score: {tr.score(x_test, y_test)}")
+print(f"AUC Score: {dt_auc}")
+
+```
+
+
+
+Random Forest Five Folds
+```{python}
+from sklearn.ensemble import RandomForestClassifier
+
+rfc = RandomForestClassifier(random_state=42)
+
+features = dat.drop(columns=['outcome', 'match_id', 'minutes'])
+
+
+x = features.select_dtypes(include=[np.number])
+y = dat['outcome']
+
+
+scaler = StandardScaler()
+
+tscv = TimeSeriesSplit(n_splits=5)
+
+for trainIDX, testIDX in tscv.split(dat):
+    x_train, x_test = x.iloc[trainIDX], x.iloc[testIDX]
+    y_train, y_test = y.iloc[trainIDX], y.iloc[testIDX]
+
+    x_train = scaler.fit_transform(x_train)
+    x_test = scaler.transform(x_test)
+
+    rfc.fit(x_train, y_train)
+
+    print(rfc.score(x_test, y_test))
+```
+
+
+
+Random Forest single split
+```{python}
+from sklearn.ensemble import RandomForestClassifier
+dat4 = dat.copy()
+
+#drop unneeded and leakage features
+features = dat4.drop(columns=['outcome', 'match_id', 'minutes'])
+
+#train on data before 2024, test after 2024
+train_data = dat4['year'] < 2024
+test_data = dat4['year'] >= 2024
+
+#train data
+x_train = features[train_data].select_dtypes(include=[np.number])
+y_train = dat4.loc[train_data, 'outcome']
+
+#test date
+x_test = features[test_data].select_dtypes(include=[np.number])
+y_test = dat4.loc[test_data, 'outcome']
+
+
+rfc = RandomForestClassifier(random_state=42) #initialize model
+rfc.fit(x_train, y_train) #fit model
+
+#prediction probabilities
+y_prob_preds = rfc.predict_proba(x_test)[:, 1]
+#fp and tp rates
+rf_fpr, rf_tpr, _ = roc_curve(y_test, y_prob_preds)
+
+#auc score
+rf_auc = roc_auc_score(y_test, y_prob_preds)
+rf_acc = rfc.score(x_test, y_test)
+
+print(f"Model Score: {rfc.score(x_test, y_test)}")
+print(f"AUC Score: {rf_auc}")
+```
+
+
+
+XGBoost
+```{python}
+from xgboost import XGBClassifier
+
+#basic xgb model
+mod = XGBClassifier(
+    n_estimators=2, 
+    max_depth=5, 
+    eta=0.3, 
+    objective='binary:logistic',
+    gamma=0,
+    min_child_weight=1,
+    subsample=1
+)
+
+
+features = dat.drop(columns=['outcome', 'match_id', 'minutes'])
+
+
+x = features.select_dtypes(include=[np.number])
+y = dat['outcome']
+
+
+#scaler = StandardScaler()
+
+tscv = TimeSeriesSplit(n_splits=5)
+
+for trainIDX, testIDX in tscv.split(dat):
+    x_train, x_test = x.iloc[trainIDX], x.iloc[testIDX]
+    y_train, y_test = y.iloc[trainIDX], y.iloc[testIDX]
+
+    #x_train = scaler.fit_transform(x_train)
+    #x_test = scaler.transform(x_test)
+
+    mod.fit(x_train, y_train)
+
+    print(mod.score(x_test, y_test))
+```
+
+
+XGBoost single split
+```{python}
+from xgboost import XGBClassifier
+
+#basic xgb model
+mod = XGBClassifier(
+    n_estimators=2, 
+    max_depth=5, 
+    eta=0.3, 
+    objective='binary:logistic',
+    gamma=0,
+    min_child_weight=1,
+    subsample=1
+)
+
+dat5 = dat.copy()
+#dat5 = dat5.drop(columns=['Unnamed: 0.1', 'Unnamed: 0'])
+
+features = dat5.drop(columns=['outcome', 'match_id', 'minutes', 'year'])
+
+train_data = dat5[(dat5['year'] < 2024)]
+test_data = dat5[dat5['year'] >= 2024]
+
+# train data
+x_train = train_data.drop(columns=['outcome', 'match_id', 'minutes']).select_dtypes(include=[np.number])
+y_train = train_data['outcome']
+
+# test data
+x_test = test_data.drop(columns=['outcome', 'match_id', 'minutes']).select_dtypes(include=[np.number])
+y_test = test_data['outcome']
+
+
+mod.fit(x_train, y_train) #fit model
+
+#prediction probabilities
+y_prob_preds = mod.predict_proba(x_test)[:, 1]
+
+#fp and tp rates
+xgb_fpr, xgb_tpr, _ = roc_curve(y_test, y_prob_preds)
+
+#auc score
+xgb_auc = roc_auc_score(y_test, y_prob_preds)
+xgb_acc = mod.score(x_test, y_test)
+
+print(f"Model Score: {mod.score(x_test, y_test)}")
+print(f"AUC Score: {xgb_auc}")
+```
+
+
+
+Tuning XBG
+```{python}
+from sklearn.model_selection import RandomizedSearchCV
+from xgboost import XGBClassifier
+
+
+mod_rand = XGBClassifier() #initialize the model
+
+params = {
+ "learning_rate" : [0.05, 0.10 ,0.15, 0.20, 0.25, 0.30], #speed in which the model learns with each new tree
+ "max_depth" : [ 3, 4, 5, 6, 8, 10, 12, 15], #maximum depth of each tree
+ "min_child_weight" : [ 1, 3, 5, 7 ], #minimum data for a tree to make a split 
+ "gamma": [ 0.0, 0.1, 0.2 , 0.3, 0.4 ], #minimum amount of loss required for a split
+ "colsample_bytree" : [ 0.3, 0.4, 0.5 , 0.7, 1.0 ], #fraction of columns sampled for each tree
+ 'subsample': [0.6, 0.8, 1.0], #fraction of rows sampled for each tree
+ "n_estimators": [100, 200, 300, 500] #number of trees
+}
+
+#random search for best parameters
+rand_search = RandomizedSearchCV(mod_rand, param_distributions=params, n_iter=50, scoring='roc_auc', n_jobs=-1, cv=TimeSeriesSplit(n_splits=5), verbose=3)
+
+
+features = dat.drop(columns=['outcome', 'match_id', 'minutes'])
+
+train_data = dat['year'] < 2023
+test_data = dat['year'] >= 2023
+
+x_train = features[train_data].select_dtypes(include=[np.number])
+y_train = dat.loc[train_data, 'outcome']
+
+x_test = features[test_data].select_dtypes(include=[np.number])
+y_test = dat.loc[test_data, 'outcome']
+
+
+
+
+rand_search.fit(x_train, y_train)
+
+```
+
+
+XGBoost model tuned and trained on all data
+```{python}
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.model_selection import TimeSeriesSplit
+import ast
+from xgboost import XGBClassifier
+
+
+features = dat.drop(columns=['outcome', 'match_id', 'minutes', 'year'])
+
+train_data = dat['year'] < 2024
+test_data = dat['year'] >= 2024
+
+x_train = features[train_data].select_dtypes(include=[np.number])
+y_train = dat.loc[train_data, 'outcome']
+
+x_test = features[test_data].select_dtypes(include=[np.number])
+y_test = dat.loc[test_data, 'outcome']
+
+#read in random search results form crc
+res = pd.read_csv("rand_search_results_3.csv")
+#return best score
+best_row = res.sort_values(by="mean_test_score", ascending=False).iloc[0]
+best_params = ast.literal_eval(best_row['params'])
+
+
+final_mod_1968 = XGBClassifier(**best_params)
+
+final_mod_1968.fit(
+    x_train, y_train,
+    eval_set=[(x_test, y_test)],
+    verbose=False
+)
+
+#prediction probabilities
+y_pred_proba = final_mod_1968.predict_proba(x_test)[:, 1]
+final_mod_1968_fpr, final_mod_1968_tpr, _ = roc_curve(y_test, y_pred_proba)
+
+#auc and accuracy
+final_mod_1968_auc = roc_auc_score(y_test, y_pred_proba)
+final_mod_1968_acc = final_mod_1968.score(x_test, y_test)
+
+print(best_params)
+print(f"Best CV AUC: {best_row['mean_test_score']}")
+print(f"Final test auc score: {final_mod_1968_auc}")
+print(f"Final Model 1968 score: {final_mod_1968.score(x_test, y_test)}")
+```
+
+XGBoost trained on matches from 2011 through 2023
+
+```{python}
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import TimeSeriesSplit
+import ast
+from xgboost import XGBClassifier
+
+
+train_data = dat[(dat['year'] < 2024) & (dat['year'] > 2010)]
+test_data = dat[dat['year'] >= 2024]
+
+# train data
+x_train = train_data.drop(columns=['outcome', 'match_id', 'minutes', 'year']).select_dtypes(include=[np.number])
+y_train = train_data['outcome']
+
+# test data
+x_test = test_data.drop(columns=['outcome', 'match_id', 'minutes', 'year']).select_dtypes(include=[np.number])
+y_test = test_data['outcome']
+
+
+
+
+
+res = pd.read_csv("rand_search_results_3.csv")
+best_row = res.sort_values(by="mean_test_score", ascending=False).iloc[0]
+
+best_params = ast.literal_eval(best_row['params'])
+
+
+final_mod_2011 = XGBClassifier(**best_params)
+
+final_mod_2011.fit(
+    x_train, y_train,
+    eval_set=[(x_test, y_test)],
+    verbose=False
+)
+
+y_pred_proba = final_mod_2011.predict_proba(x_test)[:, 1]
+final_mod_2011_fpr, final_mod_2011_tpr, _ = roc_curve(y_test, y_pred_proba)
+final_mod_2011_auc = roc_auc_score(y_test, y_pred_proba)
+final_mod_2011_acc = final_mod_2011.score(x_test, y_test)
+
+print(best_params)
+print(f"Best CV AUC: {best_row['mean_test_score']}")
+print(f"Final test auc score: {final_mod_2011_auc}")
+print(f"Final Model 2011 score: {final_mod_2011.score(x_test, y_test)}")
+```
+
+
+Shap values/feature importance
+```{python}
+import shap
+
+explainer = shap.TreeExplainer(final_mod_1968)
+shap_vals = explainer(x_test)
+
+shap.plots.beeswarm(shap_vals)
+```
+
+
+
+```{python}
+from sklearn.datasets import make_classification
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, accuracy_score
+import matplotlib.pyplot as plt
+
+preds = final_mod.predict(x_test)
+
+
+cm = confusion_matrix(y_test, preds)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+
+
+disp.plot(cmap="Blues")
+plt.title("Confusion Matrix - XGBoost Tuned")
+plt.show()
+print(accuracy_score(y_test, preds))
+```
+
+
+Neural Net?
+
+```{python}
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+import tensorflow as tf
+from tensorflow import keras
+from keras.models import Sequential # Model building
+from keras.layers import *
+
+
+features = dat.drop(columns=['outcome', 'match_id', 'minutes'])
+
+train_data = dat['year'] < 2024
+test_data = dat['year'] >= 2024
+
+x_train = features[train_data].select_dtypes(include=[np.number])
+y_train = dat.loc[train_data, 'outcome']
+
+x_test = features[test_data].select_dtypes(include=[np.number])
+y_test = dat.loc[test_data, 'outcome']
+
+#NN needs scaled data
+scaler = StandardScaler()
+
+#mean imputation to handle null values
+imputer = SimpleImputer(strategy='mean')
+x_train_imputed = imputer.fit_transform(x_train)
+x_test_imputed = imputer.transform(x_test)
+
+
+scaler = StandardScaler()
+x_train_scaled = scaler.fit_transform(x_train_imputed)
+x_test_scaled = scaler.transform(x_test_imputed)
+
+#initialize model
+model = Sequential()
+
+# add layers, batch norm, dropout etc. Could be tweaked further
+model.add(Dense(256, activation='relu', input_shape=(x_train_scaled.shape[1],)))
+model.add(BatchNormalization())
+model.add(Dropout(0.4))
+model.add(Dense(128, activation='relu'))
+model.add(BatchNormalization())
+model.add(Dropout(0.4))
+model.add(Dense(64, activation='relu'))
+model.add(BatchNormalization())
+model.add(Dropout(0.4))
+model.add(Dense(32, activation='relu'))
+model.add(BatchNormalization())
+model.add(Dropout(0.4))
+model.add(Dense(32, activation='relu'))
+model.add(BatchNormalization())
+model.add(Dropout(0.4))
+model.add(Dense(32, activation='relu'))
+model.add(BatchNormalization())
+model.add(Dropout(0.4))
+model.add(Dense(1, activation='sigmoid'))
+
+#compile the model
+model.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+    loss='binary_crossentropy', #binary classification
+    metrics=['AUC'] #evaluate on auc
+)
+
+
+model.summary()
+```
+
+
+
+```{python}
+
+
+
+
+history = model.fit(
+    x_train_scaled, y_train,
+    epochs=25,  
+    batch_size=1024,
+    verbose=1
+)
+
+
+
+# Evaluate ONCE on test set
+y_prob_preds = model.predict(x_test_scaled).flatten()
+y_class_preds = (y_prob_preds >= 0.5).astype(int)
+
+nn_auc = roc_auc_score(y_test, y_prob_preds)
+nn_acc = (y_class_preds == y_test).mean()
+
+trained_features = x_train.columns.tolist() #save features
+
+y_prob_preds = model.predict(x_test_scaled).flatten()
+y_class_preds = (y_prob_preds >= 0.5).astype(int)
+nn_fpr, nn_tpr, _ = roc_curve(y_test, y_prob_preds)
+
+print(f"AUC Score: {nn_auc}")
+print(f"ACC Score: {nn_acc}")
+
+```
+
+
+```{python}
+def build_mod(input_shape):
+    model = Sequential()
+
+    # add layers, batch norm, dropout etc. Could be tweaked further
+    model.add(Dense(256, activation='relu', input_shape=(input_shape,)))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(128, activation='relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(64, activation='relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(32, activation='relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(32, activation='relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(32, activation='relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+    model.add(Dense(1, activation='sigmoid'))
+
+    #compile the model
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy', #binary classification
+        metrics=['AUC'] #evaluate on auc
+    )
+
+    return model
+
+
+
+
+runs = 10
+best_acc = 0
+best_auc = 0
+best_model = None
+
+
+
+for run in range(runs):
+
+    model = build_mod(input_shape=x_train_scaled.shape[1])
+
+    history = model.fit(
+        x_train_scaled, y_train,
+        epochs=25,  # Based on your search results showing ~23 epochs
+        batch_size=1024,  # From best hyperparameters
+        verbose=0
+    )
+
+    y_prob_preds = model.predict(x_test_scaled).flatten()
+    y_class_preds = (y_prob_preds >= 0.5).astype(int)
+
+    nn_auc = roc_auc_score(y_test, y_prob_preds)
+    nn_acc = (y_class_preds == y_test).mean()
+
+    print(f"AUC: {nn_auc:.4f}, Accuracy: {nn_acc:.4f}")
+
+    if nn_auc > best_auc:
+        best_auc = nn_auc
+        best_acc = nn_acc
+        best_model = model
+
+
+print(f"Best AUC: {best_auc:.4f}")
+print(f"Best Accuracy: {best_acc:.4f}")
+
+# Use the best model for final predictions
+final_preds = best_model.predict(x_test_scaled, verbose=0).flatten()
+```
+
+```{python}
+best_model.save('best_tennis_model.keras')
+```
+
+```{python}
+nn_model = keras.models.load_model('best_tennis_model.keras')
+```
+
+
+```{python}
+y_prob_preds = nn_model.predict(x_test_scaled).flatten()
+y_class_preds = (y_prob_preds >= 0.5).astype(int)
+
+nn_auc = roc_auc_score(y_test, y_prob_preds)
+nn_acc = (y_class_preds == y_test).mean()
+
+nn_fpr, nn_tpr, _ = roc_curve(y_test, y_prob_preds)
+```
+
+Trying to get shap graph for neural network
+```{python}
+import shap
+import numpy as np
+
+background = x_train_scaled[:500]
+explainer = shap.DeepExplainer(nn_model, background)
+shap_vals = explainer.shap_values(x_test_scaled[:1000])
+
+
+vals = shap_vals[0] if isinstance(shap_vals, list) else shap_vals
+
+
+if vals.ndim == 3:
+    vals = vals.squeeze(-1)  
+
+print(f"vals shape after squeeze: {vals.shape}")  
+
+
+explanation = shap.Explanation(
+    values=vals,
+    data=x_test_scaled[:1000],
+    feature_names=trained_features
+)
+
+shap.plots.beeswarm(explanation)
+```
+
+
+ROC Curves
+
+```{python}
+import matplotlib.pyplot as plt
+
+#Plot
+plt.figure()
+plt.plot(logreg_fpr, logreg_tpr, label=f'Logistic Regression (AUC = {logreg_auc:.4f})')
+plt.plot(dt_fpr, dt_tpr, label=f'Decision Tree (AUC = {dt_auc:.4f})')
+plt.plot(rf_fpr, rf_tpr, label=f'Random Forests (AUC = {rf_auc:.4f})')
+plt.plot(xgb_fpr, xgb_tpr, label=f'XGBoost (AUC = {xgb_auc:.4f})')
+plt.plot(final_mod_1968_fpr, final_mod_1968_tpr, label=f'XGBoost Tuned 1968 (AUC = {final_mod_1968_auc:.4f})')
+plt.plot(final_mod_2011_fpr, final_mod_2011_tpr, label=f'XGBoost Tuned 2011 (AUC = {final_mod_2011_auc:.4f})')
+plt.plot(nn_fpr, nn_tpr, label=f'Neural Network (AUC = {nn_auc:.4f})')
+
+
+plt.plot([0,1], [0,1], 'k--', label="Random Guessing")
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve for Classification Models')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+```
+
+Table with all models and performances
+```{python}
+models_acc_auc = pd.DataFrame(data=
+    {"Model": ['Logistic Regression', 'Decision Trees', 'Random Forests', 'XGBoost', 'Tuned XGBoost 1968', 'Tuned XGBoost 2011', 'Neural Network'],
+    "Accuracy" : [logreg_acc, dt_acc, rf_acc, xgb_acc, final_mod_1968_acc, final_mod_2011_acc, nn_acc],
+    "AUC": [logreg_auc, dt_auc, rf_auc, xgb_auc, final_mod_1968_auc, final_mod_2011_auc, nn_auc]}
+)
+
+
+#formatting for table
+def highlight_max(s):
+    is_max = s == s.max()
+    return ['background-color: green' if v else '' for v in is_max]
+
+models_acc_auc.style.format({
+    'Accuracy': '{:.2%}',
+    'AUC': '{:.2%}'
+}).apply(highlight_max, subset=['Accuracy', 'AUC']).set_properties(**{
+    'text-align': 'center'
+}).set_table_styles([
+    {'selector': 'th', 'props': [('text-align', 'center'), ('font-weight', 'bold')]}
+])
+```
+
+
+Feature engineering on new data for prediction.
+```{python}
+new = pd.read_csv("tennis_extnd_feats_v2_with_aussie_data.csv")
+
+#date to datetime
+new['date'] = pd.to_datetime(new['date'])
+
+#selecting matches after 2009, to provide breathing room for features such as head to head
+new_dat = new[new['date'] > "2010-01-17"]
+```
+
+
+```{python}
+#feature engineering on new data from functions file
+from tennis_functions import head_to_head, surface_and_elo, streaks, more_cat_vars, calc_match_stats, win_rates, time_on_court_and_rest
+
+new_dat_h2h = head_to_head(new_dat)
+new_dat_surf_elo = surface_and_elo(new_dat_h2h)
+new_dat_streaks = streaks(new_dat_surf_elo)
+new_dat_more_vars = more_cat_vars(new_dat_streaks)
+new_data_match_stats = calc_match_stats(new_dat_more_vars)
+new_dat_win_rates = win_rates(new_data_match_stats)
+new_data_time_and_rest = time_on_court_and_rest(new_dat_win_rates)
+
+```
+
+```{python}
+#save data
+new_data_time_and_rest.to_csv("2010_to_2026_ausie_open.csv")
+```
+
+```{python}
+from tennis_functions import streaks, win_rates
+
+d = pd.read_csv("2010_to_2026_ausie_open.csv")
+d.columns = d.columns.str.strip()
+
+d_streaks = streaks(d)
+d_win_rates = win_rates(d_streaks)
+```
+
+```{python}
+dat = dat.drop(columns=['round__R256', 'round__Fs']) #dropping this column because it's basically useless and creates a data missmatch
+
+```
+
+
+```{python}
+#this is to correct a silly mistake I made
+d = d_win_rates.drop(columns=['matches_played_last_30Days', 'win_rate_last_30Days', 'matches_played_last_60Days', 'win_rate_last_60Days', 'matches_played_last_90Days', 'win_rate_last_90Days', 'win_loss_streak'])
+
+d.to_csv("aus_open_data_full_feats.csv")
+```
+
+
+
+Retraining model with all data up to Aussie Open
+```{python}
+final_dat = dat.copy()
+final_dat = final_dat[final_dat['date'] < "2025-06-30"]
+
+#final_dat = final_dat[final_dat['year'] > 2010]
+
+features = final_dat.drop(columns=['outcome', 'match_id', 'minutes'])
+
+x = features.select_dtypes(include=[np.number])
+y = final_dat['outcome']
+
+trained_features = x.columns.tolist()
+
+final_mod_1968.fit(x, y)
+```
+
+```{python}
+final_mod_1968.save_model('xgb_tennis_model.json')
+```
+
+
+```{python}
+# Train 10 models on ALL data with different seeds
+print("Training ensemble of 10 models on all data...")
+
+models = []
+
+for seed in range(10):
+    print(f"Training model {seed+1}/10...")
+    
+    tf.random.set_seed(seed)
+    np.random.seed(seed)
+    
+    model = build_mod(input_shape=x_scaled.shape[1])
+    model.fit(x_scaled, y, epochs=25, batch_size=1024, verbose=0)
+    models.append(model)
+
+# Ensemble predictions on Australian Open
+all_preds = np.array([m.predict(aus_scaled, verbose=0).flatten() for m in models])
+ensemble_preds = all_preds.mean(axis=0)
+
+ensemble_auc = roc_auc_score(actual_aussie_outcomes, ensemble_preds)
+ensemble_acc = ((ensemble_preds >= 0.5).astype(int) == actual_aussie_outcomes).mean()
+
+print("\\n" + "="*60)
+print("ENSEMBLE RESULTS ON AUSTRALIAN OPEN 2026")
+print("="*60)
+print(f"AUC: {ensemble_auc:.4f}")
+print(f"Accuracy: {ensemble_acc:.4f}")
+print("="*60)
+```
+
+
+
+Testing neural network on new data. Results were not great
+```{python}
+nn_dat = dat.copy()
+
+sub = nn_dat[nn_dat['date'] < "2026-01-18"]
+
+
+
+#final_dat = final_dat[final_dat['year'] > 2010]
+
+features = sub.drop(columns=['outcome', 'match_id', 'minutes'])
+
+x = features.select_dtypes(include=[np.number])
+
+imputer_new = SimpleImputer(strategy='mean')
+x_imputed = imputer_new.fit_transform(x)  
+
+scaler_new = StandardScaler()
+x_scaled = scaler_new.fit_transform(x_imputed)       
+
+y = sub['outcome']
+
+final_model = build_mod(input_shape=x_scaled.shape[1])
+
+# fine-tune on new data
+final_model.fit(
+    x_scaled, y,
+    epochs=25,           
+    batch_size=1024,
+    verbose = 1
+)
+
+
+aus_data = nn_dat[(nn_dat['tourney_name'] == 'Australian Open') & (nn_dat['year'] == 2026)]
+
+features = aus_data.drop(columns=['outcome', 'match_id', 'minutes'])
+aussie_matches = features.select_dtypes(include=[np.number])
+
+aus_imputed = imputer_new.transform(aussie_matches) 
+aus_scaled = scaler_new.transform(aus_imputed)      
+
+actual_aussie_outcomes = aus_data['outcome']
+
+nn_aus_prob_preds = final_model.predict(aus_scaled).flatten()
+nn_aus_preds = (nn_aus_prob_preds >= 0.5).astype(int)
+nn_auc_aus = roc_auc_score(actual_aussie_outcomes, nn_aus_prob_preds)
+nn_acc_aus = (nn_aus_preds == actual_aussie_outcomes).mean()
+print(f"AUC Score: {nn_auc_aus}")
+print(f"Accuracy: {nn_acc_aus}")
+```
+
+Australian Open 2026 prediction
+
+```{python}
+#p = pd.read_csv("aus_open_data_full_feats.csv")
+#p = pd.read_csv("woooooork.csv")
+p = pd.read_csv("aus_data_with_new_win_rates.csv")
+p = pd.read_csv("it_would_just_be_so_awesome_if_this_worked.csv")
+```
+
+```{python}
+#p = p.drop(columns=['Unnamed: 0.1', 'Unnamed: 0', 'Unnamed: 0.2', 'Unnamed: 0.3'])
+
+
+aus_data = dat[(dat['tourney_name'] == 'Australian Open') & (dat['year'] == 2026) & (dat['round_order'] == 2)]
+
+
+wimb_data = dat[(dat['tourney_name'] == 'Wimbledon') & (dat['year'] == 2025) & (dat['round_order'] == 2)]
+```
+
+
+```{python}
+wimb_data = dat[(dat['tourney_name'] == 'Wimbledon') & (dat['year'] == 2025) & (dat['round_order'] == 2)]
+
+features = wimb_data.drop(columns=['outcome', 'match_id', 'minutes'])
+wimb_matches = features.select_dtypes(include=[np.number])
+
+wimb_imputed = imputer_new.transform(wimb_matches) 
+wimb_scaled = scaler_new.transform(wimb_imputed)      
+
+actual_wimb_outcomes = wimb_data['outcome']
+
+nn_wimb_prob_preds = final_model.predict(wimb_scaled).flatten()
+nn_wimb_preds = (nn_wimb_prob_preds >= 0.5).astype(int)
+nn_auc_wimb = roc_auc_score(actual_wimb_outcomes, nn_wimb_prob_preds)
+nn_acc_wimb = (nn_wimb_preds == actual_wimb_outcomes).mean()
+print(f"AUC Score: {nn_auc_wimb}")
+print(f"Accuracy: {nn_acc_wimb}")
+```
+
+```{python}
+
+features = aus_data.drop(columns=['outcome', 'match_id', 'minutes'])
+aussie_matches = features.select_dtypes(include=[np.number])
+aussie_matches = aussie_matches.reindex(columns=trained_features, fill_value=0)
+
+actual_aussie_outcomes = aus_data['outcome']
+
+aus_preds = final_mod_1968.predict(aussie_matches)
+aus_pred_probs = final_mod_1968.predict_proba(aussie_matches)[:, 1]
+
+
+aussie_acc = final_mod_1968.score(aussie_matches, actual_aussie_outcomes)
+aussie_auc = roc_auc_score(actual_aussie_outcomes, aus_pred_probs)
+```
+
+
+```{python}
+# See how confident the model was
+aus_data['predicted_prob'] = nn_aus_prob_preds
+aus_data['predicted_outcome'] = nn_aus_preds
+aus_data['correct'] = (nn_aus_preds == actual_aussie_outcomes)
+
+# Most confident correct predictions
+print("Most confident correct predictions:")
+print(aus_data[aus_data['correct']].nlargest(10, 'predicted_prob')[
+    ['player', 'opponent', 'predicted_prob', 'outcome']
+])
+
+# Most confident incorrect predictions (model's biggest mistakes)
+print("\nMost confident incorrect predictions:")
+print(aus_data[~aus_data['correct']].nlargest(10, 'predicted_prob')[
+    ['player', 'opponent', 'predicted_prob', 'outcome']
+])
+```
+
+
+
+
+```{python}
+player = 'carlos alcaraz'
+player_journey = aus_data[aus_data['player'] == player].sort_values('date')
+print(player_journey[['round_order', 'opponent', 'predicted_prob', 'outcome']])
+```
+
+
+```{python}
+# By round
+round_performance = aus_data.groupby('round_order').agg({
+    'correct': 'mean',
+    'predicted_prob': 'mean'
+}).rename(columns={'correct': 'accuracy'})
+print("Performance by round:")
+print(round_performance)
+
+# Early rounds vs later rounds
+aus_data['stage'] = aus_data['round_order'].apply(
+    lambda x: 'Early' if x in ['R128', 'R64', 'R32'] else 'Late'
+)
+print("\nEarly vs Late rounds:")
+print(aus_data.groupby('stage')['correct'].mean())
+```
+
+Dallas 2026
+
+```{python}
+dal_data = dat[(dat['tourney_name'] == 'Dallas') & (dat['year'] == 2026)]
+```
+
+
+```{python}
+features = dal_data.drop(columns=['outcome', 'match_id', 'minutes'])
+dallas_matches = features.select_dtypes(include=[np.number])
+dallas_matches = dallas_matches.reindex(columns=trained_features, fill_value=0)
+
+actual_dallas_outcomes = dal_data['outcome']
+
+dallas_preds = final_mod_1968.predict(dallas_matches)
+dallas_pred_probs = final_mod_1968.predict_proba(dallas_matches)[:, 1]
+
+
+dallas_acc = final_mod_1968.score(dallas_matches, actual_dallas_outcomes)
+dallas_auc = roc_auc_score(actual_dallas_outcomes, dallas_pred_probs)
+```
+
+
+```{python}
+dal_data = dat[(dat['tourney_name'] == 'Dallas') & (dat['year'] == 2026)]
+
+features = dal_data.drop(columns=['outcome', 'match_id', 'minutes'])
+dallas_matches = features.select_dtypes(include=[np.number])
+
+dal_imputed = imputer_new.transform(dallas_matches) 
+dal_scaled = scaler_new.transform(dal_imputed)      
+
+actual_dallas_outcomes = dal_data['outcome']
+
+nn_dal_prob_preds = final_model.predict(dal_scaled).flatten()
+nn_dal_preds = (nn_dal_prob_preds >= 0.5).astype(int)
+nn_auc_dal = roc_auc_score(actual_dallas_outcomes, nn_dal_prob_preds)
+nn_acc_dal = (nn_dal_preds == actual_dallas_outcomes).mean()
+print(f"AUC Score: {nn_auc_dal}")
+print(f"Accuracy: {nn_acc_dal}")
+```
+
+
+
+```{python}
+# See how confident the model was
+dal_data['predicted_prob'] = nn_dal_prob_preds
+dal_data['predicted_outcome'] = nn_dal_preds
+dal_data['correct'] = (nn_dal_preds == actual_dallas_outcomes)
+
+# Most confident correct predictions
+print("Most confident correct predictions:")
+print(dal_data[dal_data['correct']].nlargest(10, 'predicted_prob')[
+    ['player', 'opponent', 'predicted_prob', 'outcome']
+])
+
+# Most confident incorrect predictions (model's biggest mistakes)
+print("\nMost confident incorrect predictions:")
+print(dal_data[~dal_data['correct']].nlargest(10, 'predicted_prob')[
+    ['player', 'opponent', 'predicted_prob', 'outcome']
+])
+```
+
+
+
+
+```{python}
+player = 'ben shelton'
+player_journey = dal_data[dal_data['player'] == player].sort_values('date')
+print(player_journey[['round_order', 'opponent', 'predicted_prob', 'outcome']])
+```
+
+Rotterdam 2026
+```{python}
+rot_data = p[(p['tourney_name'] == 'Rotterdam') & (p['year'] == 2026)]
+```
+
+
+```{python}
+#rot_data_single = rot_data.drop_duplicates(subset=['match_id'])
+features = rot_data.drop(columns=['outcome', 'match_id', 'minutes'])
+rot_matches = features.select_dtypes(include=[np.number])
+rot_matches = rot_matches.reindex(columns=trained_features, fill_value=0)
+
+actual_rot_outcomes = rot_data['outcome']
+
+rot_preds = final_mod_1968.predict(rot_matches)
+rot_pred_probs = final_mod_1968.predict_proba(rot_matches)[:, 1]
+
+
+rot_acc = final_mod_1968.score(rot_matches, actual_rot_outcomes)
+rot_auc = roc_auc_score(actual_rot_outcomes, rot_pred_probs)
+```
+
+
+```{python}
+rot_data = dat[(dat['tourney_name'] == 'Rotterdam') & (dat['year'] == 2026)]
+
+features = rot_data.drop(columns=['outcome', 'match_id', 'minutes'])
+rot_matches = features.select_dtypes(include=[np.number])
+
+rot_imputed = imputer_new.transform(rot_matches) 
+rot_scaled = scaler_new.transform(rot_imputed)      
+
+actual_rot_outcomes = rot_data['outcome']
+
+nn_rot_prob_preds = final_model.predict(rot_scaled).flatten()
+nn_rot_preds = (nn_rot_prob_preds >= 0.5).astype(int)
+nn_auc_rot = roc_auc_score(actual_rot_outcomes, nn_rot_prob_preds)
+nn_acc_rot = (nn_rot_preds == actual_rot_outcomes).mean()
+print(f"AUC Score: {nn_auc_rot}")
+print(f"Accuracy: {nn_acc_rot}")
+```
+
+
+
+```{python}
+# See how confident the model was
+rot_data['predicted_prob'] = nn_rot_prob_preds
+rot_data['predicted_outcome'] = nn_rot_preds
+rot_data['correct'] = (nn_rot_preds == actual_rot_outcomes)
+
+# Most confident correct predictions
+print("Most confident correct predictions:")
+print(rot_data[rot_data['correct']].nlargest(10, 'predicted_prob')[
+    ['player', 'opponent', 'predicted_prob', 'outcome']
+])
+
+# Most confident incorrect predictions (model's biggest mistakes)
+print("\nMost confident incorrect predictions:")
+print(rot_data[~rot_data['correct']].nlargest(10, 'predicted_prob')[
+    ['player', 'opponent', 'predicted_prob', 'outcome']
+])
+```
+
+
+```{python}
+player = 'alex de minaur'
+player_journey = rot_data[rot_data['player'] == player].sort_values('date')
+print(player_journey[['round_order', 'opponent', 'predicted_prob', 'outcome']])
+```
+
+Table of model prediction results
+```{python}
+predictions_results = pd.DataFrame(data=
+    {"Tournament": ["Australian Open 2026", "Dallas Open 2026", "Rotterdam 2026"],
+    "Accuracy" : [nn_acc_aus, nn_acc_dal, nn_acc_rot],
+    "AUC" : [nn_auc_aus, nn_auc_dal, nn_auc_rot]
+    }
+)
+
+
+
+def highlight_max(s):
+    is_max = s == s.max()
+    return ['background-color: green' if v else '' for v in is_max]
+
+predictions_results.style.format({
+    'Accuracy': '{:.2%}',
+    'AUC': '{:.2%}'
+}).apply(highlight_max, subset=['Accuracy', 'AUC']).set_properties(**{
+    'text-align': 'center'
+}).set_table_styles([
+    {'selector': 'th', 'props': [('text-align', 'center'), ('font-weight', 'bold')]}
+])
+```

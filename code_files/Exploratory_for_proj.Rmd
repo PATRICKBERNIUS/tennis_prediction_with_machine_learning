@@ -1,0 +1,219 @@
+---
+title: "large_tennis_matches"
+output: html_document
+date: "2026-01-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+source("elo_funcs.r")
+data <- read.csv("full_matches_data.csv")
+```
+
+
+```{r}
+tail(data)
+```
+```{r}
+names(data)
+```
+
+
+```{r}
+data[data$winner_name == 'Roger Federer',]
+```
+
+
+
+```{r}
+data$tourney_date <- as.Date(as.character(data$tourney_date),format = "%Y%m%d")
+dim(data)
+```
+
+
+
+```{r}
+players <- unique(c(data$winner_name, data$loser_name))
+
+players_elo <- data.frame(players = players, elo = rep(1500, length(players)))
+
+head(players_elo)
+```
+
+
+```{r}
+k <- 30
+
+data$winner_elo <- NA
+data$loser_elo <- NA
+
+for (i in 1:nrow(data)){
+  winner <- data$winner_name[i]
+  loser <- data$loser_name[i]
+  
+  winner_elo <- players_elo$elo[players_elo$players == winner]
+  loser_elo <- players_elo$elo[players_elo$players == loser]
+  
+  data$winner_elo[i] <- winner_elo
+  data$loser_elo[i] <- loser_elo
+  
+  new_elo <- elo.calc(wins.A = 1,
+                      elo.A = winner_elo,
+                      elo.B= loser_elo,
+                      k=k)
+  
+  players_elo$elo[players_elo$players == winner] <- new_elo[1, 1]
+  players_elo$elo[players_elo$players == loser] <- new_elo[1, 2]
+  
+  
+  
+}
+```
+
+
+```{r}
+head(data[, c("tourney_date", "winner_name", "loser_name", "winner_elo", "loser_elo")], 500)
+```
+
+```{r}
+data[data$winner_name == "Roger Federer" | data$loser_name == "Roger Federer",]
+```
+
+
+
+
+
+
+```{r}
+data$year <- as.numeric(format(data$tourney_date, "%Y"))
+```
+
+
+
+```{r}
+library(plyr)
+matches_per_year <- count(data, "year")
+names(matches_per_year)[names(matches_per_year) == 'freq'] <- 'matches'
+```
+
+
+
+```{r}
+library(ggplot2)
+
+ggplot(data=matches_per_year,
+       aes(x=year,
+           y=matches)) + 
+geom_line(color="Red", linewidth=1) +
+  labs(x="Year",
+       y="Number of Matches",
+       title="Total Matches Played Each Year") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank()) 
+```
+
+
+```{r}
+matches_won <- count(data, "winner_name")
+names(matches_won)[names(matches_won) == 'freq'] <- 'matches'
+matches_won <- arrange(matches_won, desc(matches))
+
+top_ten_winners <- head(matches_won, 10)
+```
+
+```{r}
+ggplot(data=top_ten_winners,
+       aes(x=reorder(winner_name, -matches),
+           y=matches)) + 
+  geom_bar(stat = "identity", fill="Blue") +
+  theme_bw() +
+  labs(x="Player",
+       y="Matches",
+       title="Top Ten Matches Won by Player") +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank()) +
+  theme(axis.text.x=element_text(angle=-45))
+```
+
+
+```{r}
+matches_surface_by_year <- data %>% 
+  count(year, surface, name = "matches") %>% 
+  filter(trimws(surface) != "")
+
+#matches_surface_by_year <- na.omit(matches_surface_by_year)
+```
+
+```{r}
+ggplot(data=matches_surface_by_year,
+       aes(x=year,
+           y=matches, 
+           color = surface)) + 
+geom_line(linewidth=1) +
+  labs(x="Year",
+       y="Matches",
+       title="Matches by Year and Surface",
+       color="Surface") +
+  scale_color_manual(values = c("Carpet" = "Red",
+                                "Clay" = "Orange",
+                                "Hard" = "Purple",
+                                "Grass" = "Dark Green")) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
+
+```{r}
+avg_elo <- data %>%
+  group_by(year) %>%
+  summarise(
+    avg_win_elo = mean(winner_elo),
+    avg_loss_elo = mean(loser_elo),
+    .groups = 'drop'
+  )
+
+
+library(tidyr)
+long_avg_elo <- avg_elo %>% 
+  pivot_longer(
+    cols = c(avg_win_elo, avg_loss_elo),
+    names_to = "win_loss",
+    values_to = "elo_rating"
+  )
+
+
+ggplot(data=long_avg_elo,
+       aes(x=year,
+           y=elo_rating,
+           color=win_loss)) +
+  geom_line(linewidth = 1) +
+  theme_bw() +
+  labs(x="Year",
+       y="ELO Rating",
+       title="Average ELO For Winners and Losers Over Time",
+       color="Win or Loss") +
+  scale_color_manual(labels=c("Average Loser ELO", "Average Winner ELO"),
+                     values=c("Red", "Light Blue")) +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+       
+```
+
+
+

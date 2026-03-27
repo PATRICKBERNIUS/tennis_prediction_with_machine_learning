@@ -1,0 +1,22 @@
+---
+title: "Untitled"
+format: html
+---
+
+
+```{python}
+import pandas as pd
+import glob
+
+files = glob.glob(r"C:\Users\patbe\OneDrive\Documents\Sports Analytics\Tennis\data/*")
+
+data = []
+
+for file in files:
+    csv = pd.read_csv(file)
+    data.append(csv)
+    
+
+full_data = pd.concat(data)
+full_data.to_csv("match_data.csv")
+```

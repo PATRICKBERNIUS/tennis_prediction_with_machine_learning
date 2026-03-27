@@ -1,0 +1,744 @@
+---
+title: "Australian Open 2026 Simulation"
+output: html_document
+date: "2026-02-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(xgboost)
+source("elo_funcs.r")
+
+model <- xgb.load('xgb_tennis_model.json')
+```
+
+```{r}
+dat <- read.csv("go_for_tuning_third_attempt.csv")
+```
+
+
+```{r}
+# Get feature names from the trained model
+# If the model was created with xgb.train
+trained_features <- model$feature_names
+
+# Compare
+missing <- setdiff(trained_features, colnames(aus_open_dat))
+print(missing)
+```
+
+
+```{r}
+aus_open_dat <- dat[dat$tourney_name == "Australian Open" & dat$year == 2026,]
+matchups <- aus_open_dat[, c("player", "opponent", "round_order")]
+#write.csv(matchups, "aus_open_2026_matchups.csv", row.names=FALSE)
+```
+
+
+
+```{r}
+
+#'outcome', 'match_id', 'minutes', 'date',
+
+aus_open_dat$outcome <- NULL
+aus_open_dat$match_id <- NULL
+aus_open_dat$minutes <- NULL
+aus_open_dat$date <- NULL
+aus_open_dat$X <- NULL
+aus_open_dat$Unnamed..0 <- NULL
+aus_open_dat$Unnamed..0.1 <- NULL
+
+feats_db <- aus_open_dat[sapply(aus_open_dat, is.numeric)]
+```
+
+```{r}
+aus_open_r1 <- dat[dat$tourney_name == "Australian Open" & dat$year == 2026 & dat$round_order == 3,]
+```
+
+
+
+```{r}
+#aus_open_sorted <- aus_open_dat[order(aus_open_dat$date), ]
+
+# Get first appearance for each player
+player_db_elo <- data.frame()
+surface_elo_db <- data.frame()
+for(p in unique(aus_open_dat$player)){
+  player_matches <- aus_open_dat[aus_open_dat$player == p, ]
+  first_match <- player_matches[1, ]
+  player_db_elo <- rbind(player_db_elo, 
+                         data.frame(player = p, 
+                                    elo = first_match$player_elo))
+  surface_elo_db <- rbind(surface_elo_db, 
+                         data.frame(player = p, 
+                                    elo = first_match$player_surf_elo))
+  
+}
+```
+
+
+```{r}
+sim_matches <- function(player_1, player_2, features_db, elo_db, surface_elo_db){
+  
+  player_1 <- trimws(player_1)
+  player_2 <- trimws(player_2)
+  
+  if(player_1 %in% features_db$player &
+     player_2 %in% features_db$opponent){
+    match_idx <- which(trimws(features_db$player) == player_1 & 
+                     trimws(features_db$opponent) == player_2)
+  
+  if(length(match_idx) == 0){
+    stop(paste("No match found for", player_1, "vs", player_2))
+  }
+  
+  
+  # Extract match features
+  match_features <- features_db[features_db$player == player_1 &
+                                  features_db$opponent == player_2, ]
+  
+  # Get numeric features and convert to matrix
+  feature_cols <- match_features[, sapply(match_features, is.numeric)]
+  feature_matrix <- as.matrix(feature_cols)
+  
+  # Get win probability from model
+  match_win_prob <- predict(model, feature_matrix)
+  
+  # Simulate random number
+  match_sim_val <- runif(1, min = 0, max = 1)
+  
+  
+  # Determine winner
+  if(match_sim_val <= match_win_prob){
+    match_res <- 1  # Player 1 wins
+    winner <- player_1
+  } else {
+    match_res <- 0  # Player 2 wins
+    winner <- player_2
+  }
+  
+  
+  # Calculate new ELO ratings
+  new_elo <- elo.calc(wins.A = match_res,
+                      elo.A = elo_db$elo[elo_db$player == player_1],
+                      elo.B = elo_db$elo[elo_db$player == player_2],
+                      k = 32)
+  
+  
+  # Update ELO in elo_db
+  elo_db$elo[elo_db$player == player_1] <- new_elo[1,1]
+  elo_db$elo[elo_db$player == player_2] <- new_elo[1,2]
+  
+  new_surf_elo <- elo.calc(wins.A = match_res,
+                      elo.A = surface_elo_db$elo[surface_elo_db$player == player_1],
+                      elo.B = surface_elo_db$elo[surface_elo_db$player == player_2],
+                      k = 32)
+  
+  
+  # Update surface ELO in elo_db
+  surface_elo_db$elo[surface_elo_db$player == player_1] <- new_surf_elo[1,1]
+  surface_elo_db$elo[surface_elo_db$player == player_2] <- new_surf_elo[1,2]
+  
+  
+  return(list(winner = winner,
+              win_prob = match_win_prob,
+              elo_db = elo_db,
+              surface_elo_db = surface_elo_db))
+  } else if (player_1 %in% features_db$player &
+             !player_2 %in% features_db$opponent) {
+    return(list(winner = player_1,
+              win_prob = 0.5,
+              elo_db = elo_db,
+              surface_elo_db = surface_elo_db))
+  } else if (!player_1 %in% features_db$player &
+             player_2 %in% features_db$opponent) {
+    return(list(winner = player_2,
+              win_prob = 0.5,
+              elo_db = elo_db,
+              surface_elo_db = surface_elo_db))
+  }
+  # 
+  # match_idx <- which(trimws(features_db$player) == player_1 & 
+  #                    trimws(features_db$opponent) == player_2)
+  # 
+  # if(length(match_idx) == 0){
+  #   stop(paste("No match found for", player_1, "vs", player_2))
+  # }
+  # 
+  # 
+  # # Extract match features
+  # match_features <- features_db[features_db$player == player_1 &
+  #                                 features_db$opponent == player_2, ]
+  # 
+  # # Get numeric features and convert to matrix
+  # feature_cols <- match_features[, sapply(match_features, is.numeric)]
+  # feature_matrix <- as.matrix(feature_cols)
+  # 
+  # # Get win probability from model
+  # match_win_prob <- predict(model, feature_matrix)
+  # 
+  # # Simulate random number
+  # match_sim_val <- runif(1, min = 0, max = 1)
+  # 
+  # 
+  # # Determine winner
+  # if(match_sim_val <= match_win_prob){
+  #   match_res <- 1  # Player 1 wins
+  #   winner <- player_1
+  # } else {
+  #   match_res <- 0  # Player 2 wins
+  #   winner <- player_2
+  # }
+  # 
+  # 
+  # # Calculate new ELO ratings
+  # new_elo <- elo.calc(wins.A = match_res,
+  #                     elo.A = elo_db$elo[elo_db$player == player_1],
+  #                     elo.B = elo_db$elo[elo_db$player == player_2],
+  #                     k = 32)
+  # 
+  # 
+  # # Update ELO in elo_db
+  # elo_db$elo[elo_db$player == player_1] <- new_elo[1,1]
+  # elo_db$elo[elo_db$player == player_2] <- new_elo[1,2]
+  # 
+  # new_surf_elo <- elo.calc(wins.A = match_res,
+  #                     elo.A = surface_elo_db$elo[surface_elo_db$player == player_1],
+  #                     elo.B = surface_elo_db$elo[surface_elo_db$player == player_2],
+  #                     k = 32)
+  # 
+  # 
+  # # Update surface ELO in elo_db
+  # surface_elo_db$elo[surface_elo_db$player == player_1] <- new_surf_elo[1,1]
+  # surface_elo_db$elo[surface_elo_db$player == player_2] <- new_surf_elo[1,2]
+  # 
+  # 
+  # return(list(winner = winner,
+  #             win_prob = match_win_prob,
+  #             elo_db = elo_db,
+  #             surface_elo_db = surface_elo_db))
+}
+
+```
+
+
+
+```{r}
+sim_match_ensemble <- function(player_1, player_2, elo_db, surface_elo_db){
+  
+  overall_prob <- elo.prob(elo_db$elo[elo_db$player == player_1],
+                          elo_db$elo[elo_db$player == player_2])
+                      
+                      
+  
+  surface_prob <- elo.prob(surface_elo_db$elo[surface_elo_db$player == player_1],
+                          surface_elo_db$elo[surface_elo_db$player == player_2])
+  
+  
+  #weighted elos
+  p1_weighted <- 0.6 * elo_db$elo[elo_db$player == player_1] +
+    0.4 * surface_elo_db$elo[surface_elo_db$player == player_1]
+  
+  p2_weighted <- 0.6 * elo_db$elo[elo_db$player == player_2] +
+    0.4 * surface_elo_db$elo[surface_elo_db$player == player_2]
+  
+  weighted_prob <- elo.prob(p1_weighted, p2_weighted)
+  
+  win_prob <- 0.5 * overall_prob + 0.3 * surface_prob + 0.2 * weighted_prob
+  
+  sim_val <- runif(1, min=0, max=1)
+  
+  if(sim_val <= win_prob){
+    match_res <- 1
+    winner <- player_1
+  } else{
+    match_res <- 0
+    winner <- player_2
+  }
+  
+  new_elo <- elo.calc(wins.A = match_res,
+                      elo.A = elo_db$elo[elo_db$player == player_1],
+                      elo.B = elo_db$elo[elo_db$player == player_2],
+                      k = 32)
+  
+  elo_db$elo[elo_db$player == player_1] <- new_elo[1,1]
+  elo_db$elo[elo_db$player == player_2] <- new_elo[1,2]
+  
+  new_surf_elo <- elo.calc(wins.A = match_res,
+                      elo.A = surface_elo_db$elo[surface_elo_db$player == player_1],
+                      elo.B = surface_elo_db$elo[surface_elo_db$player == player_2],
+                      k = 32)
+  
+  surface_elo_db$elo[surface_elo_db$player == player_1] <- new_surf_elo[1,1]
+  surface_elo_db$elo[surface_elo_db$player == player_2] <- new_surf_elo[1,2]
+  
+  
+  return(list(winner = winner,
+              win_prob=win_prob,
+              elo_db=elo_db,
+              surface_elo_db=surface_elo_db))
+}
+```
+
+
+```{r}
+players <- unique(aus_open_dat$player)
+```
+
+
+
+```{r}
+# R1 matchups from Australian Open 2026 Men's Singles Draw
+draw <- data.frame(
+  player = c(
+    # Matches 1-8
+    "carlos alcaraz", "adam walton",
+    "yannick hanfmann", "zachary svajda",
+    "michael zheng", "sebastian korda",
+    "tristan schoolkate", "corentin moutet",
+    "tommy paul", "aleksandar kovacevic",
+    "thiago agustin tirante", "aleksandar vukic",
+    "nicolai budkov kjaer", "reilly opelka",
+    "filip misolic", "alejandro davidovich fokina",
+    
+    # Matches 9-16
+    "alexander bublik", "jenson brooksby",
+    "camilo ugo carabelli", "marton fucsovics",
+    "miomir kecmanovic", "tomas martin etcheverry",
+    "arthur fery", "flavio cobolli",
+    "frances tiafoe", "jason kubler",
+    "patrick kypson", "francisco comesana",
+    "mariano navone", "hamad medjedovic",
+    "matteo berrettini", "alex de minaur",
+    
+    # Matches 17-24
+    "alexander zverev", "gabriel diallo",
+    "alexei popyrin", "alexandre muller",
+    "emilio nava", "kyrian jacquet",
+    "benjamin bonzi", "cameron norrie",
+    "francisco cerundolo", "zhang zhizhen",
+    "liam draxl", "damir dzumhur",
+    "arthur cazaux", "jaime faria",
+    "matteo arnaldi", "andrey rublev",
+    
+    # Matches 25-32
+    "daniil medvedev", "jesper de jong",
+    "quentin halys", "alejandro tabilo",
+    "kamil majchrzak", "jacob fearnley",
+    "fabian marozsan", "arthur rinderknech",
+    "learner tien", "marcos giron",
+    "elias ymer", "alexander shevchenko",
+    "juan manuel cerundolo", "jordan thompson",
+    "nuno borges", "felix auger-aliassime",
+    
+    # Matches 33-40
+    "lorenzo musetti", "raphael collignon",
+    "lorenzo sonego", "carlos taberner",
+    "grigor dimitrov", "tomas machac",
+    "shintaro mochizuki", "stefanos tsitsipas",
+    "jiri lehecka", "arthur gea",
+    "laslo djere", "stan wawrinka",
+    "vit kopriva", "jan-lennard struff",
+    "valentin royer", "taylor fritz",
+    
+    # Matches 41-48
+    "jakub mensik", "pablo carreno busta",
+    "rei sakamoto", "rafael jodar",
+    "hubert hurkacz", "zizou bergs",
+    "ethan quinn", "tallon griekspoor",
+    "brandon nakashima", "botic van de zandschulp",
+    "shang juncheng", "roberto bautista agut",
+    "terence atmane", "francesco maestrelli",
+    "pedro martinez", "novak djokovic",
+    
+    # Matches 49-56
+    "ben shelton", "ugo humbert",
+    "dane sweeny", "gael monfils",
+    "adrian mannarino", "rinky hijikata",
+    "martin damm", "valentin vacherot",
+    "denis shapovalov", "bu yunchaokete",
+    "daniel altmaier", "marin cilic",
+    "jaume munar", "dalibor svrcina",
+    "mattia bellucci", "casper ruud",
+    
+    # Matches 57-64
+    "karen khachanov", "alex michelsen",
+    "christopher o'connell", "nishesh basavareddy",
+    "giovanni mpetshi perricard", "sebastian baez",
+    "cristian garin", "luciano darderi",
+    "joao fonseca", "eliot spizzirri",
+    "luca nardi", "wu yibing",
+    "james duckworth", "dino prizmic",
+    "hugo gaston", "jannik sinner"
+  
+),
+  r1 = rep(1:64, each = 2),
+  r1_winner = 0,
+  r2 = rep(1:32, each = 4),
+  r2_winner = 0,
+  r3 = rep(1:16, each = 8),
+  r3_winner = 0,
+  r4 = rep(1:8, each = 16),
+  r4_winner = 0,
+  qf = rep(1:4, each = 32),
+  qf_winner = 0,
+  sf = rep(1:2, each = 64),
+  sf_winner = 0,
+  final = rep(1, 128),
+  final_winner = 0
+)
+```
+
+```{r}
+set.seed(8008135)
+
+
+for (i in 1:64){ #for each of the first 64 matches
+  r1_players <- draw$player[draw$r1 == i] #get the two players in the match
+  
+  #call sim_matches function and store the results
+  result <- sim_matches(player_1 = r1_players[1],
+                        player_2 = r1_players[2],
+                        features_db = aus_open_dat,
+                        elo_db =player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r1_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#R64
+for (i in 1:32){ 
+  r2_players <- draw$player[draw$r2 == i & draw$r1_winner == 1] #r1 winners who advanced to r2
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = r2_players[1],
+                        player_2 = r2_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r2_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#R32
+for (i in 1:16){ #for each of the first 64 matches
+  r3_players <- draw$player[draw$r3 == i & draw$r2_winner == 1] #r2 winners who advanced to r3
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = r3_players[1],
+                        player_2 = r3_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r3_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#R16
+for (i in 1:8){ #for each of the first 64 matches
+  r4_players <- draw$player[draw$r4 == i & draw$r3_winner == 1] #r3 winners who advanced to r4
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = r4_players[1],
+                        player_2 = r4_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r4_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#Quarterfinals
+for (i in 1:4){
+  qf_players <- draw$player[draw$qf == i & draw$r4_winner == 1] #r4 winners who advanced to qfs
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = qf_players[1],
+                        player_2 = qf_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$qf_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+#Semifinals 
+for (i in 1:2){
+  sf_players <- draw$player[draw$sf == i & draw$qf_winner == 1] #qf winners who advanced to sf
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = sf_players[1],
+                        player_2 = sf_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$sf_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+#Finals
+final_players <- draw$player[draw$final == 1 & draw$sf_winner == 1] #sf winners who advanced to the finals
+result <- sim_match_ensemble(player_1 = final_players[1],
+                      player_2 = final_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+
+draw$final_winner[draw$player == result$winner] <- 1
+```
+
+
+```{r}
+set.seed(1738)
+
+
+for (i in 1:64){ #for each of the first 64 matches
+  r1_players <- draw$player[draw$r1 == i] #get the two players in the match
+  
+  #call sim_matches function and store the results
+  result <- sim_matches(player_1 = r1_players[1],
+                        player_2 = r1_players[2],
+                        features_db = aus_open_dat,
+                        elo_db = aus_open_r1,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r1_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#R64
+for (i in 1:32){ 
+  r2_players <- draw$player[draw$r2 == i & draw$r1_winner == 1] #r1 winners who advanced to r2
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = r2_players[1],
+                        player_2 = r2_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r2_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#R32
+for (i in 1:16){ #for each of the first 64 matches
+  r3_players <- draw$player[draw$r3 == i & draw$r2_winner == 1] #r2 winners who advanced to r3
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = r3_players[1],
+                        player_2 = r3_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r3_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#R16
+for (i in 1:8){ #for each of the first 64 matches
+  r4_players <- draw$player[draw$r4 == i & draw$r3_winner == 1] #r3 winners who advanced to r4
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = r4_players[1],
+                        player_2 = r4_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$r4_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+
+#Quarterfinals
+for (i in 1:4){
+  qf_players <- draw$player[draw$qf == i & draw$r4_winner == 1] #r4 winners who advanced to qfs
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = qf_players[1],
+                        player_2 = qf_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$qf_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+#Semifinals 
+for (i in 1:2){
+  sf_players <- draw$player[draw$sf == i & draw$qf_winner == 1] #qf winners who advanced to sf
+  
+  #call sim_matches function and store the results
+  result <- sim_match_ensemble(player_1 = sf_players[1],
+                        player_2 = sf_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+  
+  #mark the winner
+  draw$sf_winner[draw$player == result$winner] <- 1
+  
+  #update dataframes
+  player_db_elo <- result$elo_db
+  surface_elo_db <- result$surface_elo_db
+  
+}
+
+
+#Finals
+final_players <- draw$player[draw$final == 1 & draw$sf_winner == 1] #sf winners who advanced to the finals
+result <- sim_match_ensemble(player_1 = final_players[1],
+                      player_2 = final_players[2],
+                        elo_db = player_db_elo,
+                        surface_elo_db = surface_elo_db)
+
+draw$final_winner[draw$player == result$winner] <- 1
+```
+```{r}
+d <- read.csv("2026_aus_open.csv")
+aus_d <- d[d$tourney_name == "Australian Open" & d$tourney_date > 20260101,]
+r1_matches = aus_d[aus_d$round == "R128", ]
+
+
+playas <- unique(unlist(r1_matches[c("winner_name", "loser_name")]))
+
+temp <- r1_matches[1, ]
+
+all_matchups <- list()
+
+counter <- 1
+
+for (p1 in playas){
+  for (p2 in playas){
+    if (p1 != p2){d
+      match <- temp
+      match$winner_name <- p1
+      match$loser_name <- p2
+      match$match_id <- paste0('hyp_', p1, '_', p2)
+      
+      all_matchups[[counter]] <- match
+      counter <- counter + 1
+    }
+  }
+}
+
+
+hyp <- do.call(rbind, all_matchups)
+```
+
+```{r}
+dat <- read.csv("match_data.csv")
+hist <- dat[dat$tourney_date > 20150000,]
+hist$X <- NULL
+hyp$match_id <- NULL
+
+combined <- rbind(hist, hyp)
+```
+
+
+
+```{r}
+source("tennis_functions.R")
+```
+
+```{r}
+elo_dat <- calculate_elo(combined)
+```
+
+```{r}
+elo_surf_dat <- calculate_surface_elo(elo_dat)
+```
+
+```{r}
+elo_surf_dat$loser_seed <- as.numeric(elo_surf_dat$loser_seed)
+long <- to_long_data(elo_surf_dat)
+```
+
+
+```{r}
+xtra_feets <- extra_feats(long)
+```
+
+
+```{r}
+xtra_feets$date <- as.Date(as.character(xtra_feets$date), format = "%Y%m%d")
+write.csv(xtra_feets, "combination_df.csv", row.names = FALSE)
+```
+
+
+
+
