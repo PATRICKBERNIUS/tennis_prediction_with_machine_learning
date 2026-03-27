@@ -7,7 +7,7 @@ containing matches from 1968 to the present day. The bulk of this project involv
 feature engineering and implementing machine learning models, notably Logistic 
 Regression, XGBoost, and Neural Networks.
 
-**[View Full Report (PDF)](your-link-here)**
+View the full report here: **[View Full Report (PDF)](your-link-here)**
 
 ---
 
@@ -26,7 +26,7 @@ The code files are a mix of Python and R.
 | `nn_tuning_for_crc.py` | Neural Network hyperparameter tuning — sent to supercomputer |
 | `xgb_rand_tuning.py` | XGBoost random hyperparameter tuning — sent to supercomputer |
 
-### 📊 R Files
+### R Files
 
 | File | Description |
 |---|---|
